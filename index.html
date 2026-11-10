@@ -3,29 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Projeto TCC - Energia</title>
+<title>Energia</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&display=swap" rel="stylesheet">
-<script>
-/* Alguns WebViews (ex.: App Inventor) bloqueiam o localStorage e o Paho falha.
-   Se isso acontecer, usa um armazenamento em memoria no lugar. */
-(function(){
-  var ok = false;
-  try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); ok = true; } catch(e){}
-  if (!ok){
-    var mem = {};
-    var fake = {
-      getItem:function(k){ return Object.prototype.hasOwnProperty.call(mem,k) ? mem[k] : null; },
-      setItem:function(k,v){ mem[k] = String(v); },
-      removeItem:function(k){ delete mem[k]; },
-      clear:function(){ mem = {}; },
-      key:function(i){ return Object.keys(mem)[i] || null; }
-    };
-    Object.defineProperty(fake,"length",{get:function(){ return Object.keys(mem).length; }});
-    try { Object.defineProperty(window,"localStorage",{value:fake,configurable:true}); } catch(e){ window.localStorage = fake; }
-  }
-})();
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 <style>
 :root{
@@ -36,8 +16,7 @@
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.4}
 .wrap{max-width:520px;margin:0 auto;padding:12px 14px 48px}
-header{display:flex;justify-content:space-between;align-items:center;padding:6px 2px 12px}
-h1{font-size:19px;margin:0;font-weight:800;letter-spacing:-.01em}
+header{display:flex;justify-content:flex-end;align-items:center;padding:6px 2px 12px}
 .dots{display:flex;gap:12px;font-size:12px;color:var(--ink2)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--neutral);margin-right:5px;vertical-align:baseline}
 .dot.on{background:var(--ok)} .dot.off{background:var(--crit)}
@@ -94,6 +73,8 @@ details summary{cursor:pointer;font-weight:700}
 label{display:block;font-size:13px;color:var(--ink2);margin-top:10px}
 input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;padding:0 10px;font:inherit}
 .salvar{margin-top:12px;width:100%}
+.lamp-row{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.lamp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
 .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s}
 .toast.show{opacity:1}
@@ -104,7 +85,6 @@ input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;p
 <div class="wrap">
 
   <header>
-    <h1>Projeto TCC</h1>
     <div class="dots">
       <span><i class="dot" id="dMqtt"></i><span id="tMqtt">Broker</span></span>
       <span><i class="dot" id="dHist"></i><span id="tHist">Histórico</span></span>
@@ -160,9 +140,10 @@ input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;p
   <section>
     <details>
       <summary>Ajustes</summary>
-      <label for="iUrl">Link do histórico (Apps Script, termina em /exec)</label>
-      <input id="iUrl" inputmode="url" autocomplete="off">
-      <button class="btn ativo salvar" id="bSalvar">Salvar ajustes</button>
+      <p class="sub" style="margin-top:10px">Lâmpadas por área (todas iguais na mesma área)</p>
+      <div id="cfgLamp"></div>
+      <p class="nota">Potência total instalada: <b id="lampTotal">--</b> W</p>
+      <button class="btn ativo salvar" id="bSalvarLamp">Salvar</button>
     </details>
   </section>
 
@@ -172,12 +153,13 @@ input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;p
 <script>
 /* ============ CONFIGURAÇÃO (edite aqui) ============ */
 const CONFIG = {
-  sheetsUrl: "https://script.google.com/macros/s/AKfycbwGDROFXtujVytVjWRe2AsXjfRw95dFIBiHQHmacG9Fk7QNlVrBYjjohUJcepxlufMV/exec",
+  sheetsUrl: "https://script.google.com/macros/s/AKfycbwGDROFXtujVytVjWRe2AsXjfRw95dFIBiHQHmacG9Fk7QNlVrBYjjohUJcepxlufMV/exec",   // termina em /exec
   broker: "broker.emqx.io",
   porta: 8084,                       // WebSocket seguro do broker
   topicoComando: "rjb/D4NI",
   topicoEstado:  "rjb/D4NI/estado",
   topicoEnergia: "rjb/D4NI/energia",
+  topicoConfig:  "rjb/D4NI/config",
   maxW: 36                           // 4 áreas x 9 W
 };
 
@@ -190,12 +172,7 @@ const NIVEIS = [
   {n:"Crítico",  c:"crit", cor:"#C62F24"}
 ];
 
-function lerAjustes(){
-  let s = {};
-  try { s = JSON.parse(localStorage.getItem("tccAjustes") || "{}"); } catch(e){}
-  return Object.assign({sheetsUrl:CONFIG.sheetsUrl}, s);
-}
-let AJ = lerAjustes();
+const AJ = { sheetsUrl: CONFIG.sheetsUrl };
 
 const num1 = n => n.toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
 const num2 = n => n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -283,7 +260,7 @@ function renderBanner(){
   b.className = "banner";
   if (nA==null && nM==null){
     $("bNivel").textContent = "Aguardando dados";
-    $("bAgora").textContent = ST.mqtt ? "Esperando a primeira leitura do ESP32..." : "Conectando ao broker MQTT...";
+    $("bAgora").textContent = ST.mqtt ? "" : "Conectando ao broker MQTT...";
     $("bMes").textContent = ""; return;
   }
   const pior = Math.max(nA==null?0:nA, nM==null?0:nM);
@@ -391,8 +368,7 @@ function setMqtt(ok){
 function conectar(){
   if (typeof Paho === "undefined"){ $("tMqtt").textContent = "Biblioteca MQTT não carregou"; return; }
   const id = "dash-" + Math.random().toString(16).slice(2,10);
-  try { client = new Paho.MQTT.Client(CONFIG.broker, CONFIG.porta, "/mqtt", id); }
-  catch(err){ $("tMqtt").textContent = "Erro: " + err.message; setTimeout(conectar, 4000); return; }
+  client = new Paho.MQTT.Client(CONFIG.broker, CONFIG.porta, "/mqtt", id);
   client.onConnectionLost = () => { setMqtt(false); setTimeout(conectar, 3000); };
   client.onMessageArrived = msg => {
     const t = msg.destinationName, p = msg.payloadString.trim();
@@ -405,12 +381,20 @@ function conectar(){
       if (!isNaN(w)) EN.w = w;
       if (!isNaN(wh)) EN.wh = wh;
       renderGauge(); renderConsumo(); renderVariacao(); renderBanner();
+    } else if (t === CONFIG.topicoConfig){
+      const v = p.split(",").map(parseFloat);
+      if (v.length === 8 && v.every(x => !isNaN(x))){
+        for (let i=0;i<4;i++){ LAMP.q[i] = v[i*2]; LAMP.w[i] = v[i*2+1]; }
+        CONFIG.maxW = LAMP.q.reduce((s,q,i) => s + q*LAMP.w[i], 0) || 1;
+        $("gMax").textContent = num1(CONFIG.maxW);
+        renderAjustesLamp(); renderGauge(); renderBanner(); renderVariacao();
+      }
     }
   };
   client.connect({
     useSSL:true, timeout:8, keepAliveInterval:30, cleanSession:true,
-    onSuccess: () => { setMqtt(true); client.subscribe(CONFIG.topicoEstado); client.subscribe(CONFIG.topicoEnergia); },
-    onFailure: (e) => { setMqtt(false); $("tMqtt").textContent = "Offline: " + ((e && e.errorMessage) ? e.errorMessage : "sem detalhe"); setTimeout(conectar, 4000); }
+    onSuccess: () => { setMqtt(true); client.subscribe(CONFIG.topicoEstado); client.subscribe(CONFIG.topicoEnergia); client.subscribe(CONFIG.topicoConfig); },
+    onFailure: () => { setMqtt(false); setTimeout(conectar, 4000); }
   });
 }
 function enviar(cmd){
@@ -425,34 +409,68 @@ function enviar(cmd){
 function urlOk(u){ return typeof u === "string" && u.indexOf("https://script.google.com") === 0; }
 async function carregarHistorico(){
   if (!urlOk(AJ.sheetsUrl)){
-    $("dHist").className = "dot"; $("tHist").textContent = "Histórico não configurado";
+    $("dHist").className = "dot"; $("tHist").textContent = "Histórico";
     HIST = null; AN = null; renderTudo(); return;
   }
   try {
     const r = await fetch(AJ.sheetsUrl + (AJ.sheetsUrl.indexOf("?")>=0 ? "&" : "?") + "resumo=1");
     HIST = await r.json();
     AN = analisar(HIST);
-    $("dHist").className = "dot on"; $("tHist").textContent = "Histórico ok";
+    $("dHist").className = "dot on"; $("tHist").textContent = "Histórico";
   } catch(e){
-    $("dHist").className = "dot off"; $("tHist").textContent = "Histórico com erro";
+    $("dHist").className = "dot off"; $("tHist").textContent = "Histórico";
   }
   renderTudo();
 }
 
-/* ============ AJUSTES ============ */
-function preencherAjustes(){
-  $("iUrl").value = urlOk(AJ.sheetsUrl) ? AJ.sheetsUrl : "";
+/* ============ AJUSTES: LÂMPADAS POR ÁREA ============ */
+const LAMP = { q:[1,1,1,1], w:[9,9,9,9] };
+
+function renderAjustesLamp(){
+  const el = $("cfgLamp");
+  if (!el.dataset.pronto){
+    let h = "";
+    for (let i=0;i<4;i++){
+      h += `<div class="lamp-row"><b>${NOMES[i]}</b>
+        <div class="lamp-grid">
+          <label>Lâmpadas<input id="lq${i}" type="number" inputmode="numeric" min="0" max="20" step="1"></label>
+          <label>W por lâmpada<input id="lw${i}" type="number" inputmode="decimal" min="0" max="200" step="0.5"></label>
+        </div><div class="st" id="lt${i}"></div></div>`;
+    }
+    el.innerHTML = h; el.dataset.pronto = "1";
+    el.addEventListener("input", totaisLamp);
+  }
+  if (!el.contains(document.activeElement)){      // não sobrescreve enquanto você digita
+    for (let i=0;i<4;i++){ $("lq"+i).value = LAMP.q[i]; $("lw"+i).value = LAMP.w[i]; }
+  }
+  totaisLamp();
 }
-$("bSalvar").addEventListener("click", () => {
-  AJ = { sheetsUrl: $("iUrl").value.trim() };
-  try { localStorage.setItem("tccAjustes", JSON.stringify(AJ)); } catch(e){}
-  toast("Ajustes salvos");
-  carregarHistorico();
+
+function totaisLamp(){
+  let tot = 0;
+  for (let i=0;i<4;i++){
+    const p = (parseFloat($("lq"+i).value)||0) * (parseFloat($("lw"+i).value)||0);
+    $("lt"+i).textContent = `Total da área: ${num1(p)} W`;
+    tot += p;
+  }
+  $("lampTotal").textContent = num1(tot);
+}
+
+$("bSalvarLamp").addEventListener("click", () => {
+  const partes = [];
+  for (let i=0;i<4;i++){
+    const q = parseInt($("lq"+i).value, 10), w = parseFloat($("lw"+i).value);
+    if (isNaN(q) || isNaN(w) || q<0 || q>20 || w<0 || w>200){
+      toast("Confira " + NOMES[i] + ": 0–20 lâmpadas, 0–200 W"); return;
+    }
+    partes.push(q, w);
+  }
+  enviar("CFG:" + partes.join(","));
 });
 
 /* ============ INÍCIO ============ */
 $("gMax").textContent = CONFIG.maxW;
-preencherAjustes();
+renderAjustesLamp();
 renderTudo();
 conectar();
 carregarHistorico();
