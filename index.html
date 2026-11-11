@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -6,6 +7,24 @@
 <title>Energia</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script>
+(function(){
+  var ok = false;
+  try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); ok = true; } catch(e){}
+  if (!ok){
+    var mem = {};
+    var fake = {
+      getItem:function(k){ return Object.prototype.hasOwnProperty.call(mem,k) ? mem[k] : null; },
+      setItem:function(k,v){ mem[k] = String(v); },
+      removeItem:function(k){ delete mem[k]; },
+      clear:function(){ mem = {}; },
+      key:function(i){ return Object.keys(mem)[i] || null; }
+    };
+    Object.defineProperty(fake,"length",{get:function(){ return Object.keys(mem).length; }});
+    try { Object.defineProperty(window,"localStorage",{value:fake,configurable:true}); } catch(e){ window.localStorage = fake; }
+  }
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 <style>
 :root{
@@ -151,19 +170,17 @@ input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;p
 <div class="toast" id="toast"></div>
 
 <script>
-/* ============ CONFIGURAÇÃO (edite aqui) ============ */
 const CONFIG = {
-  sheetsUrl: "https://script.google.com/macros/s/AKfycbwGDROFXtujVytVjWRe2AsXjfRw95dFIBiHQHmacG9Fk7QNlVrBYjjohUJcepxlufMV/exec",   // termina em /exec
+  sheetsUrl: "https://script.google.com/macros/s/AKfycbwGDROFXtujVytVjWRe2AsXjfRw95dFIBiHQHmacG9Fk7QNlVrBYjjohUJcepxlufMV/exec",
   broker: "broker.emqx.io",
-  porta: 8084,                       // WebSocket seguro do broker
+  porta: 8084,
   topicoComando: "rjb/D4NI",
   topicoEstado:  "rjb/D4NI/estado",
   topicoEnergia: "rjb/D4NI/energia",
   topicoConfig:  "rjb/D4NI/config",
-  maxW: 36                           // 4 áreas x 9 W
+  maxW: 36
 };
 
-/* ============ AUXILIARES ============ */
 const $ = id => document.getElementById(id);
 const NOMES = ["Área 1","Área 2","Área 3","Área 4"];
 const NIVEIS = [
@@ -183,13 +200,11 @@ function toast(msg){
   clearTimeout(toast.h); toast.h = setTimeout(()=>t.classList.remove("show"), 1800);
 }
 
-/* ============ ESTADO ============ */
 const ST = { mqtt:false, areas:[null,null,null,null], portao:null };
 const EN = { w:null, wh:null };
-let HIST = null;       // resposta do Google Sheets
-let AN = null;         // análise mensal
+let HIST = null;
+let AN = null;
 
-/* ============ NÍVEIS ============ */
 function pctAgora(){ return EN.w==null ? null : EN.w / CONFIG.maxW * 100; }
 function nivelAgora(){
   const p = pctAgora(); if (p==null) return null;
@@ -211,7 +226,6 @@ function analisar(h){
   return {avgMes, avgAnt, varPct, nivel, am, aa, share};
 }
 
-/* ============ RENDER ============ */
 function renderGauge(){
   const arc = $("gArc");
   const p = pctAgora();
@@ -357,7 +371,6 @@ function renderTudo(){
   renderGauge(); renderLista(); renderConsumo(); renderVariacao(); renderGrafico(); renderBanner();
 }
 
-/* ============ MQTT ============ */
 let client;
 function setMqtt(ok){
   ST.mqtt = ok;
@@ -368,7 +381,8 @@ function setMqtt(ok){
 function conectar(){
   if (typeof Paho === "undefined"){ $("tMqtt").textContent = "Biblioteca MQTT não carregou"; return; }
   const id = "dash-" + Math.random().toString(16).slice(2,10);
-  client = new Paho.MQTT.Client(CONFIG.broker, CONFIG.porta, "/mqtt", id);
+  try { client = new Paho.MQTT.Client(CONFIG.broker, CONFIG.porta, "/mqtt", id); }
+  catch(err){ $("tMqtt").textContent = "Erro: " + err.message; setTimeout(conectar, 4000); return; }
   client.onConnectionLost = () => { setMqtt(false); setTimeout(conectar, 3000); };
   client.onMessageArrived = msg => {
     const t = msg.destinationName, p = msg.payloadString.trim();
@@ -394,7 +408,7 @@ function conectar(){
   client.connect({
     useSSL:true, timeout:8, keepAliveInterval:30, cleanSession:true,
     onSuccess: () => { setMqtt(true); client.subscribe(CONFIG.topicoEstado); client.subscribe(CONFIG.topicoEnergia); client.subscribe(CONFIG.topicoConfig); },
-    onFailure: () => { setMqtt(false); setTimeout(conectar, 4000); }
+    onFailure: (e) => { setMqtt(false); $("tMqtt").textContent = "Offline: " + ((e && e.errorMessage) ? e.errorMessage : "sem detalhe"); setTimeout(conectar, 4000); }
   });
 }
 function enviar(cmd){
@@ -405,7 +419,6 @@ function enviar(cmd){
   toast("Comando enviado: " + cmd);
 }
 
-/* ============ HISTÓRICO (Google Sheets) ============ */
 function urlOk(u){ return typeof u === "string" && u.indexOf("https://script.google.com") === 0; }
 async function carregarHistorico(){
   if (!urlOk(AJ.sheetsUrl)){
@@ -423,7 +436,6 @@ async function carregarHistorico(){
   renderTudo();
 }
 
-/* ============ AJUSTES: LÂMPADAS POR ÁREA ============ */
 const LAMP = { q:[1,1,1,1], w:[9,9,9,9] };
 
 function renderAjustesLamp(){
@@ -440,7 +452,7 @@ function renderAjustesLamp(){
     el.innerHTML = h; el.dataset.pronto = "1";
     el.addEventListener("input", totaisLamp);
   }
-  if (!el.contains(document.activeElement)){      // não sobrescreve enquanto você digita
+  if (!el.contains(document.activeElement)){
     for (let i=0;i<4;i++){ $("lq"+i).value = LAMP.q[i]; $("lw"+i).value = LAMP.w[i]; }
   }
   totaisLamp();
@@ -468,7 +480,6 @@ $("bSalvarLamp").addEventListener("click", () => {
   enviar("CFG:" + partes.join(","));
 });
 
-/* ============ INÍCIO ============ */
 $("gMax").textContent = CONFIG.maxW;
 renderAjustesLamp();
 renderTudo();
@@ -478,3 +489,4 @@ setInterval(carregarHistorico, 60000);
 </script>
 </body>
 </html>
+```
