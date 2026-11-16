@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SmartLar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script>
+(function(){
+  var ok = false;
+  try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); ok = true; } catch(e){}
+  if (!ok){
+    var mem = {};
+    var fake = {
+      getItem:function(k){ return Object.prototype.hasOwnProperty.call(mem,k) ? mem[k] : null; },
+      setItem:function(k,v){ mem[k] = String(v); },
+      removeItem:function(k){ delete mem[k]; },
+      clear:function(){ mem = {}; },
+      key:function(i){ return Object.keys(mem)[i] || null; }
+    };
+    Object.defineProperty(fake,"length",{get:function(){ return Object.keys(mem).length; }});
+    try { Object.defineProperty(window,"localStorage",{value:fake,configurable:true}); } catch(e){ window.localStorage = fake; }
+  }
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+<style>
+:root{
+  --ink:#3A2430; --ink2:#7A5B68; --bg:#FBF2F5; --card:#FFFFFF; --line:#EFDCE3;
+  --rosa:#B5617C; --rosa2:#F6E4EA;
+  --ok:#3E8B63; --warn:#E3A13F; --crit:#C24A55; --neutral:#B8A2AB;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.4}
+.wrap{max-width:520px;margin:0 auto;padding:12px 14px 48px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 12px;padding:6px 2px 12px}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--rosa)}
+h1 span{color:var(--ink)}
+.dots{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 12px;font-size:12px;color:var(--ink2)}
+.dots>span{white-space:nowrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--neutral);margin-right:5px;vertical-align:baseline}
+.dot.on{background:var(--ok)} .dot.off{background:var(--crit)}
+
+.banner{border-radius:16px;padding:16px 18px;color:#fff;background:var(--neutral);transition:background .4s}
+.banner.ok{background:var(--ok)}
+.banner.warn{background:var(--warn);color:var(--ink)}
+.banner.crit{background:var(--crit)}
+.banner .nivel{font-size:32px;font-weight:800;line-height:1.1;letter-spacing:-.02em}
+.banner p{margin:6px 0 0;font-size:14px}
+
+section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:12px}
+h2{font-size:16px;margin:0 0 12px;font-weight:700}
+.sub{font-size:13px;color:var(--ink2);margin:-6px 0 12px}
+
+.gauge{text-align:center}
+.gauge svg{width:100%;max-width:300px;display:block;margin:0 auto}
+.gauge .big{font-size:44px;font-weight:800;line-height:1;margin-top:-52px;font-variant-numeric:tabular-nums}
+.gauge .small{font-size:14px;color:var(--ink2);margin-top:4px}
+
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0;padding-top:0}
+.nome{font-weight:700}
+.st{font-size:13px;color:var(--ink2)}
+.btns{display:flex;gap:8px}
+.btn{min-width:84px;padding:0 10px;height:42px;border-radius:10px;border:1.5px solid var(--rosa);background:#fff;color:var(--ink);font:700 14px "Figtree",system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+.btn.ativo{background:var(--rosa);color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:active:not(:disabled){transform:scale(.96)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--rosa);outline-offset:2px}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.m{background:var(--rosa2);border-radius:12px;padding:10px 12px}
+.m b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.m span{font-size:12px;color:var(--ink2)}
+
+.chip{display:inline-block;padding:2px 10px;border-radius:999px;font-weight:700;font-size:13px;color:#fff;background:var(--neutral)}
+.chip.ok{background:var(--ok)} .chip.warn{background:var(--warn);color:var(--ink)} .chip.crit{background:var(--crit)}
+.bloco{margin-top:12px}
+.bloco h3{font-size:14px;margin:0 0 4px;font-weight:700}
+.bloco p{margin:0;color:var(--ink)}
+ul.dicas{margin:6px 0 0;padding-left:18px}
+ul.dicas li{margin:3px 0}
+
+.barra{height:8px;border-radius:4px;background:var(--rosa2);overflow:hidden;margin-top:3px}
+.barra i{display:block;height:100%;background:var(--rosa);border-radius:4px}
+.share{margin-top:8px;font-size:13px}
+.share .lin{display:flex;justify-content:space-between}
+.share .item{margin-top:8px}
+
+svg.chart{width:100%;height:auto;display:block}
+.nota{font-size:12px;color:var(--ink2);margin-top:8px}
+
+details summary{cursor:pointer;font-weight:700}
+label{display:block;font-size:13px;color:var(--ink2);margin-top:10px}
+input{width:100%;height:40px;border:1.5px solid var(--line);border-radius:10px;padding:0 10px;font:inherit}
+.salvar{margin-top:12px;width:100%}
+.lamp-row{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.lamp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Smart<span>Lar</span></h1>
+    <div class="dots">
+      <span><i class="dot" id="dMqtt"></i><span id="tMqtt">Broker</span></span>
+      <span><i class="dot" id="dEsp"></i><span id="tEsp">ESP32</span></span>
+      <span><i class="dot" id="dHist"></i><span id="tHist">Histórico</span></span>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" aria-live="polite" hidden>
+    <div class="nivel" id="bNivel">Aguardando dados</div>
+    <p id="bAgora">Conectando ao broker MQTT...</p>
+    <p id="bMes"></p>
+  </div>
+
+  <section class="gauge">
+    <h2>Consumo atual</h2>
+    <svg viewBox="0 0 200 110" aria-hidden="true">
+      <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#F3E3E9" stroke-width="16" stroke-linecap="round"/>
+      <path id="gArc" d="M20 100 A80 80 0 0 1 180 100" pathLength="100" fill="none" stroke="#B8A2AB" stroke-width="16" stroke-linecap="round" stroke-dasharray="0 100"/>
+    </svg>
+    <div class="big" id="gPct">--%</div>
+    <div class="small"><span id="gW">--</span> W em uso de <span id="gMax">36</span> W</div>
+  </section>
+
+  <section>
+    <h2>Áreas e portão</h2>
+    <div id="lista"></div>
+  </section>
+
+  <section>
+    <h2>Consumo de energia</h2>
+    <div class="grid">
+      <div class="m"><span>Hoje</span><b id="eDia">--</b></div>
+      <div class="m"><span>Este mês</span><b id="eMes">--</b></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sugestão de economia</h2>
+    <p id="sTexto" style="margin:0">Aguardando dados de hoje.</p>
+    <p class="nota" id="sNota"></p>
+  </section>
+
+  <section>
+    <h2>Variação diária</h2>
+    <div><span class="chip" id="vChip">Sem dados</span> <b id="vPct" style="margin-left:6px"></b></div>
+    <div class="bloco"><h3 id="vCausaT">Causa</h3><p id="vCausa">Aguardando histórico.</p></div>
+    <div class="bloco"><h3>Consumo por área hoje</h3><div class="share" id="vShare"></div></div>
+  </section>
+
+  <section>
+    <h2>Últimos 7 dias</h2>
+    <svg class="chart" id="chart" viewBox="0 0 300 130" role="img" aria-label="Consumo diário dos últimos 7 dias"></svg>
+    <p class="nota" id="chartNota"></p>
+  </section>
+
+  <section>
+    <details>
+      <summary>Ajustes</summary>
+      <p class="sub" style="margin-top:10px">Lâmpadas por área (todas iguais na mesma área)</p>
+      <div id="cfgLamp"></div>
+      <p class="nota">Potência total instalada: <b id="lampTotal">--</b> W</p>
+      <button class="btn ativo salvar" id="bSalvarLamp">Salvar</button>
+    </details>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CONFIG = {
+  sheetsUrl: "https://script.google.com/macros/s/AKfycbwGDROFXtujVytVjWRe2AsXjfRw95dFIBiHQHmacG9Fk7QNlVrBYjjohUJcepxlufMV/exec",
+  broker: "broker.emqx.io",
+  porta: 8084,
+  topicoComando: "rjb/D4NI",
+  topicoEstado:  "rjb/D4NI/estado",
+  topicoEnergia: "rjb/D4NI/energia",
+  topicoConfig:  "rjb/D4NI/config",
+  topicoStatus:  "rjb/D4NI/status",  // "online" / "offline" (Last Will do ESP32)
+  maxW: 36
+};
+
+const $ = id => document.getElementById(id);
+const NOMES = ["Área 1","Área 2","Área 3","Área 4"];
+const NIVEIS = [
+  {n:"Baixo",    c:"ok",   cor:"#3E8B63"},
+  {n:"Moderado", c:"warn", cor:"#E3A13F"},
+  {n:"Alto",     c:"crit", cor:"#C24A55"}
+];
+
+const AJ = { sheetsUrl: CONFIG.sheetsUrl };
+
+const num1 = n => n.toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
+const num2 = n => n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtE = wh => wh >= 1000 ? num2(wh/1000)+" kWh" : num1(wh)+" Wh";
+
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(()=>t.classList.remove("show"), 1800);
+}
+
+const ST = { mqtt:false, esp:null, areas:[null,null,null,null], portao:null };
+const EN = { w:null, wh:null };
+let HIST = null;
+let AN = null;
+
+function pctAgora(){
+  if (EN.w==null || ST.esp===false || CONFIG.maxW<=0) return null;
+  return EN.w / CONFIG.maxW * 100;
+}
+function nivelAgora(){
+  const p = pctAgora(); if (p==null) return null;
+  return p < 50 ? 0 : p < 80 ? 1 : 2;
+}
+/* ===== VARIAÇÃO DIÁRIA: hoje x ontem =====
+   Hoje ainda não acabou, então compara a MÉDIA por hora:
+   hoje = Wh de hoje ÷ horas que já passaram; ontem = Wh de ontem ÷ 24 h. */
+function analisar(h){
+  if (!h || !Array.isArray(h.dias) || h.dias.length < 2) return null;
+  const n = h.dias.length;
+  const whHoje = h.dias[n-1].wh, whOntem = h.dias[n-2].wh;
+  const agora = new Date(), meiaNoite = new Date(agora); meiaNoite.setHours(0,0,0,0);
+  const horasHoje = Math.max(0.25, (agora - meiaNoite) / 3600000);
+  const avgHoje = whHoje / horasHoje, avgOntem = whOntem / 24;
+  let varPct = null, nivel = null;
+  if (avgOntem > 0){
+    varPct = (avgHoje - avgOntem) / avgOntem * 100;
+    nivel = varPct <= 10 ? 0 : varPct <= 25 ? 1 : 2;
+  }
+  const aDia = Array.isArray(h.aDia) ? h.aDia : null;
+  const aOntem = Array.isArray(h.aOntem) ? h.aOntem : null;
+  const ah = aDia ? aDia.map(x => x / horasHoje) : null;
+  const ao = aOntem ? aOntem.map(x => x / 24) : null;
+  let share = null;
+  if (aDia){ const s = aDia.reduce((a,b)=>a+b,0); share = aDia.map(x => s>0 ? x/s*100 : 0); }
+  return {avgHoje, avgOntem, varPct, nivel, ah, ao, share};
+}
+
+function renderGauge(){
+  const arc = $("gArc");
+  const p = pctAgora();
+  if (p==null){
+    arc.setAttribute("stroke-dasharray","0 100"); arc.setAttribute("stroke","#B8A2AB");
+    $("gPct").textContent = "--%"; $("gW").textContent = "--"; return;
+  }
+  const nv = NIVEIS[nivelAgora()];
+  arc.setAttribute("stroke-dasharray", Math.min(100,p)+" 100");
+  arc.setAttribute("stroke", nv.cor);
+  $("gPct").textContent = Math.round(p)+"%";
+  $("gW").textContent = num1(EN.w);
+}
+
+function renderLista(){
+  const el = $("lista");
+  if (!el.dataset.pronto){
+    let html = "";
+    for (let i=0;i<4;i++){
+      html += `<div class="row"><div><div class="nome">${NOMES[i]}</div><div class="st" id="s${i}">Aguardando...</div></div>
+        <div class="btns"><button class="btn" id="on${i}" data-c="ON${i+1}">Ligar</button><button class="btn" id="off${i}" data-c="OFF${i+1}">Desligar</button></div></div>`;
+    }
+    html += `<div class="row"><div><div class="nome">Portão</div><div class="st" id="sp">Aguardando...</div></div>
+        <div class="btns"><button class="btn" id="open" data-c="ABRIR">Abrir</button><button class="btn" id="close" data-c="FECHAR">Fechar</button></div></div>`;
+    el.innerHTML = html; el.dataset.pronto = "1";
+    el.addEventListener("click", e => {
+      const b = e.target.closest("button[data-c]"); if (b) enviar(b.dataset.c);
+    });
+  }
+  const velho = ST.esp===false ? " (última leitura)" : "";
+  for (let i=0;i<4;i++){
+    const v = ST.areas[i];
+    $("s"+i).textContent = v==null ? "Aguardando..." : (v ? "Ligada" : "Desligada") + velho;
+    $("on"+i).classList.toggle("ativo", v===true);
+    $("off"+i).classList.toggle("ativo", v===false);
+  }
+  $("sp").textContent = ST.portao==null ? "Aguardando..." : (ST.portao ? "Aberto" : "Fechado") + velho;
+  $("open").classList.toggle("ativo", ST.portao===true);
+  $("close").classList.toggle("ativo", ST.portao===false);
+  el.querySelectorAll("button").forEach(b => b.disabled = !ST.mqtt || ST.esp===false);
+}
+
+function renderBanner(){
+  const nA = nivelAgora();
+  const nM = AN ? AN.nivel : null;
+  const b = $("banner");
+  b.className = "banner";
+  b.hidden = false;
+  if (ST.esp===false){
+    b.classList.add("crit");
+    $("bNivel").textContent = "ESP32 offline";
+    $("bAgora").textContent = "O ESP32 está desligado ou sem internet. Os estados mostrados são a última leitura recebida.";
+    $("bMes").textContent = ""; return;
+  }
+  // Sem dados ainda: o aviso fica escondido (as bolinhas do topo já mostram a conexão)
+  if (nA==null && nM==null){ b.hidden = true; return; }
+  const pior = Math.max(nA==null?0:nA, nM==null?0:nM);
+  b.classList.add(NIVEIS[pior].c);
+  $("bNivel").textContent = "Consumo " + NIVEIS[pior].n.toLowerCase();
+  // A potência já aparece no medidor; o banner só diz o nível e o motivo
+  const pelaMes = nM!=null && (nA==null || nM>=nA);
+  $("bAgora").textContent = pelaMes
+    ? `Hoje ${AN.varPct>0?"+":""}${num1(AN.varPct)}% em relação a ontem`
+    : (nA!=null ? `${Math.round(pctAgora())}% da potência instalada em uso agora` : "");
+  $("bMes").textContent = "";
+}
+
+function renderConsumo(){
+  if (!HIST){
+    ["eDia","eMes"].forEach(i => $(i).textContent = "--");
+    return;
+  }
+  $("eDia").textContent = fmtE(HIST.dia);
+  $("eMes").textContent = fmtE(HIST.mes);
+}
+
+/* ===== SUGESTÃO DE ECONOMIA (dados de HOJE) =====
+   Tempo ligada = energia da área (Wh) ÷ potência da área (W).
+   Usa o tempo, e não o consumo, para não culpar a área que só tem mais lâmpadas. */
+const fmtH = h => h < 1 ? Math.round(h*60) + " min" : num1(h) + " h";
+function renderSugestao(){
+  const aDia = HIST && Array.isArray(HIST.aDia) ? HIST.aDia : null;
+  if (!aDia){
+    $("sTexto").textContent = "Aguardando dados de hoje.";
+    $("sNota").textContent = ""; return;
+  }
+  let top = -1, horas = 0;
+  for (let i=0;i<4;i++){
+    const w = LAMP.q[i] * LAMP.w[i];
+    if (w <= 0) continue;
+    const hh = aDia[i] / w;
+    if (hh > horas){ horas = hh; top = i; }
+  }
+  if (top < 0 || horas < 0.25){
+    $("sTexto").textContent = "Hoje nenhuma área ficou muito tempo ligada. Continue assim!";
+    $("sNota").textContent = ""; return;
+  }
+  const w = LAMP.q[top] * LAMP.w[top];
+  const corte = Math.min(1, horas / 2);          // sugere cortar 1 h (ou metade, se ficou pouco tempo)
+  const ecoDia = w * corte;                       // Wh economizados por dia
+  $("sTexto").innerHTML = `Hoje, até agora, a <b>${NOMES[top]}</b> foi a que ficou mais tempo ligada: <b>${fmtH(horas)}</b>. `
+    + `Desligando ${fmtH(corte)} mais cedo, você economiza cerca de <b>${fmtE(ecoDia)}</b> por dia.`;
+  $("sNota").textContent = `Cálculo: ${num1(w)} W × ${fmtH(corte)} = ${fmtE(ecoDia)}.`;
+}
+
+function renderVariacao(){
+  const chip = $("vChip");
+  chip.className = "chip";
+  if (!AN){
+    chip.textContent = "Sem dados"; $("vPct").textContent = "";
+    $("vCausaT").textContent = "Situação";
+    $("vCausa").textContent = "Aguardando histórico."; $("vShare").innerHTML = ""; return;
+  }
+  let causa;
+  $("vCausaT").textContent = "Causa";
+  if (AN.varPct==null){
+    chip.textContent = "Sem base";
+    $("vPct").textContent = `potência média hoje: ${num1(AN.avgHoje)} W`;
+    $("vCausaT").textContent = "Situação";
+    causa = "Ontem não houve consumo registrado, então ainda não dá para comparar.";
+  } else {
+    chip.classList.add(NIVEIS[AN.nivel].c);
+    chip.textContent = NIVEIS[AN.nivel].n;
+    $("vPct").textContent = `${AN.varPct>0?"+":""}${num1(AN.varPct)}% (${num1(AN.avgOntem)} W → ${num1(AN.avgHoje)} W)`;
+    if (AN.nivel===0){
+      causa = AN.varPct < -5 ? "Hoje o consumo está menor que ontem." : "Hoje o consumo está parecido com o de ontem.";
+    } else {
+      let best=-1, delta=0;
+      if (AN.ah && AN.ao) for (let i=0;i<4;i++){ const d = AN.ah[i]-AN.ao[i]; if (d>delta){delta=d;best=i;} }
+      if (best<0) causa = "Hoje o consumo está maior que ontem.";
+      else causa = `${NOMES[best]} foi a que mais pesou: a média foi de ${num1(AN.ao[best])} W ontem para ${num1(AN.ah[best])} W hoje (+${num1(delta)} W). Ela está ficando mais tempo ligada.`;
+    }
+  }
+  $("vCausa").textContent = causa;
+  $("vShare").innerHTML = AN.share
+    ? AN.share.map((p,i)=>`<div class="item"><div class="lin"><span>${NOMES[i]}</span><b>${Math.round(p)}%</b></div><div class="barra"><i style="width:${p}%"></i></div></div>`).join("")
+    : `<p class="nota" style="margin:0">Aguardando dados por área de hoje.</p>`;
+}
+
+function renderGrafico(){
+  const svg = $("chart");
+  if (!HIST || !HIST.dias){ svg.innerHTML = ""; $("chartNota").textContent = "Sem histórico para mostrar."; return; }
+  const d = HIST.dias, max = Math.max(1, ...d.map(x=>x.wh));
+  const w = 300, h = 130, base = 104, topo = 18, bw = 26, gap = (w - d.length*bw) / (d.length+1);
+  let s = `<line x1="0" y1="${base}" x2="${w}" y2="${base}" stroke="#EFDCE3"/>`;
+  d.forEach((x,i)=>{
+    const alt = Math.max(2, (x.wh/max)*(base-topo));
+    const px = gap + i*(bw+gap);
+    s += `<rect x="${px}" y="${base-alt}" width="${bw}" height="${alt}" rx="4" fill="#B5617C"/>`;
+    if (x.wh > 0) s += `<text x="${px+bw/2}" y="${base-alt-4}" text-anchor="middle" font-size="9" fill="#3A2430">${x.wh>=1000?num1(x.wh/1000)+"k":Math.round(x.wh)}</text>`;
+    s += `<text x="${px+bw/2}" y="122" text-anchor="middle" font-size="9" fill="#7A5B68">${x.d}</text>`;
+  });
+  svg.innerHTML = s;
+  const tot = d.reduce((a,x)=>a+x.wh, 0);
+  $("chartNota").textContent = `Total da semana: ${fmtE(tot)} · consumo por dia em Wh`;
+}
+
+function renderTudo(){
+  renderGauge(); renderLista(); renderConsumo(); renderSugestao(); renderVariacao(); renderGrafico(); renderBanner();
+}
+
+let client;
+function setMqtt(ok){
+  ST.mqtt = ok;
+  $("dMqtt").className = "dot " + (ok ? "on" : "off");
+  $("dMqtt").title = ok ? "Broker conectado" : "Broker offline";   // nome fixo; só a bolinha muda
+  renderLista(); renderBanner();
+}
+function setEsp(online){
+  ST.esp = online;
+  $("dEsp").className = "dot " + (online ? "on" : "off");
+  $("dEsp").title = online ? "ESP32 online" : "ESP32 offline";
+  renderTudo();
+}
+function conectar(){
+  if (typeof Paho === "undefined"){ $("dMqtt").className = "dot off"; console.log("Biblioteca MQTT não carregou"); return; }
+  const id = "dash-" + Math.random().toString(16).slice(2,10);
+  try { client = new Paho.MQTT.Client(CONFIG.broker, CONFIG.porta, "/mqtt", id); }
+  catch(err){ setMqtt(false); console.log("Erro MQTT:", err.message); setTimeout(conectar, 4000); return; }
+  client.onConnectionLost = () => { setMqtt(false); setTimeout(conectar, 3000); };
+  client.onMessageArrived = msg => {
+    const t = msg.destinationName, p = msg.payloadString.trim();
+    if (t === CONFIG.topicoEstado){
+      for (let i=0;i<4;i++) ST.areas[i] = p.charAt(i) === "1";
+      ST.portao = p.charAt(4) === "A";
+      renderLista(); renderVariacao();
+    } else if (t === CONFIG.topicoEnergia){
+      const [w, wh] = p.split(",").map(parseFloat);
+      if (!isNaN(w)) EN.w = w;
+      if (!isNaN(wh)) EN.wh = wh;
+      renderGauge(); renderConsumo(); renderVariacao(); renderBanner();
+    } else if (t === CONFIG.topicoStatus){
+      setEsp(p === "online");
+    } else if (t === CONFIG.topicoConfig){
+      const v = p.split(",").map(parseFloat);
+      if (v.length === 8 && v.every(x => !isNaN(x))){
+        for (let i=0;i<4;i++){ LAMP.q[i] = v[i*2]; LAMP.w[i] = v[i*2+1]; }
+        CONFIG.maxW = LAMP.q.reduce((s,q,i) => s + q*LAMP.w[i], 0) || 1;
+        $("gMax").textContent = num1(CONFIG.maxW);
+        renderAjustesLamp(); renderGauge(); renderBanner(); renderVariacao(); renderSugestao();
+      }
+    }
+  };
+  client.connect({
+    useSSL:true, timeout:8, keepAliveInterval:30, cleanSession:true,
+    onSuccess: () => { setMqtt(true); client.subscribe(CONFIG.topicoEstado); client.subscribe(CONFIG.topicoEnergia); client.subscribe(CONFIG.topicoConfig); client.subscribe(CONFIG.topicoStatus); },
+    onFailure: (e) => {
+      setMqtt(false);   // mostra só "Broker offline"
+      console.log("Falha MQTT:", e && e.errorMessage);   // detalhe técnico fica só no console
+      setTimeout(conectar, 4000);
+    }
+  });
+}
+function enviar(cmd){
+  if (!ST.mqtt){ toast("Sem conexão com o broker"); return; }
+  const m = new Paho.MQTT.Message(cmd);
+  m.destinationName = CONFIG.topicoComando;
+  client.send(m);
+  toast("Comando enviado: " + cmd);
+}
+
+function urlOk(u){ return typeof u === "string" && u.indexOf("https://script.google.com") === 0; }
+async function carregarHistorico(){
+  if (!urlOk(AJ.sheetsUrl)){
+    $("dHist").className = "dot"; $("tHist").textContent = "Histórico";
+    HIST = null; AN = null; renderTudo(); return;
+  }
+  try {
+    const r = await fetch(AJ.sheetsUrl + (AJ.sheetsUrl.indexOf("?")>=0 ? "&" : "?") + "resumo=1");
+    HIST = await r.json();
+    AN = analisar(HIST);
+    $("dHist").className = "dot on"; $("tHist").textContent = "Histórico";
+  } catch(e){
+    $("dHist").className = "dot off"; $("tHist").textContent = "Histórico";
+  }
+  renderTudo();
+}
+
+const LAMP = { q:[1,1,1,1], w:[9,9,9,9] };
+
+function renderAjustesLamp(){
+  const el = $("cfgLamp");
+  if (!el.dataset.pronto){
+    let h = "";
+    for (let i=0;i<4;i++){
+      h += `<div class="lamp-row"><b>${NOMES[i]}</b>
+        <div class="lamp-grid">
+          <label>Lâmpadas<input id="lq${i}" type="number" inputmode="numeric" min="0" max="20" step="1"></label>
+          <label>W por lâmpada<input id="lw${i}" type="number" inputmode="decimal" min="0" max="200" step="0.5"></label>
+        </div><div class="st" id="lt${i}"></div></div>`;
+    }
+    el.innerHTML = h; el.dataset.pronto = "1";
+    el.addEventListener("input", totaisLamp);
+  }
+  if (!el.contains(document.activeElement)){
+    for (let i=0;i<4;i++){ $("lq"+i).value = LAMP.q[i]; $("lw"+i).value = LAMP.w[i]; }
+  }
+  totaisLamp();
+}
+
+function totaisLamp(){
+  let tot = 0;
+  for (let i=0;i<4;i++){
+    const p = (parseFloat($("lq"+i).value)||0) * (parseFloat($("lw"+i).value)||0);
+    $("lt"+i).textContent = `Total da área: ${num1(p)} W`;
+    tot += p;
+  }
+  $("lampTotal").textContent = num1(tot);
+}
+$("bSalvarLamp").addEventListener("click", () => {
+  const partes = [];
+  for (let i=0;i<4;i++){
+    const q = parseInt($("lq"+i).value, 10), w = parseFloat($("lw"+i).value);
+    if (isNaN(q) || isNaN(w) || q<0 || q>20 || w<0 || w>200){
+      toast("Confira " + NOMES[i] + ": 0–20 lâmpadas, 0–200 W"); return;
+    }
+    partes.push(q, w);
+  }
+  if (ST.esp===false){ toast("ESP32 offline: não dá para salvar agora"); return; }
+  enviar("CFG:" + partes.join(","));
+});
+
+$("gMax").textContent = CONFIG.maxW;
+renderAjustesLamp();
+renderTudo();
+conectar();
+carregarHistorico();
+setInterval(carregarHistorico, 60000);
+</script>
+</body>
+</html>
